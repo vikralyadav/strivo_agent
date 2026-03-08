@@ -102,28 +102,67 @@ def execute_query(sql_query):
             result = connection.execute(text(sql_query))
             fetched_results = result.fetchall()
 
-        # Open a new connection for query optimization (avoid "commands out of sync" issue)
-        index_suggestion = suggest_index(sql_query)
-
-        return {"results": fetched_results, "optimization_tips": index_suggestion}
+        return fetched_results
     except SQLAlchemyError as e:
         print(f"Database Execution Error: {str(e)}")
         return None
 
+def format_results_as_text(results, original_query):
+    """
+    Converts database results into plain English explanations.
+    Hides technical details and presents data in a friendly, conversational way.
+    """
+    if not results:
+        return "No information available in the database for your question."
+    
+    # Count results
+    result_count = len(results)
+    
+    # Extract column names from results
+    if hasattr(results[0], 'keys'):
+        columns = results[0].keys()
+    else:
+        columns = [f"Column {i+1}" for i in range(len(results[0]))]
+    
+    # Format single result
+    if result_count == 1:
+        row = results[0]
+        if len(columns) == 1:
+            # Single value response (count, total, etc.)
+            col_name = list(columns)[0] if hasattr(columns, '__iter__') else columns
+            value = row[0] if isinstance(row, tuple) else row[col_name]
+            return f"{value}"
+        else:
+            # Multiple columns in single row
+            formatted_parts = []
+            for col, val in zip(columns, row):
+                formatted_parts.append(f"{col}: {val}")
+            return " | ".join(formatted_parts)
+    
+    # Format multiple results as a list
+    response = f"Here are the results:\n\n"
+    for idx, row in enumerate(results, 1):
+        if len(columns) == 1:
+            value = row[0] if isinstance(row, tuple) else row[list(columns)[0]]
+            response += f"{idx}. {value}\n"
+        else:
+            row_data = []
+            for col, val in zip(columns, row):
+                row_data.append(f"{col}: {val}")
+            response += f"{idx}. {' | '.join(row_data)}\n"
+    
+    return response.strip()
+
 if __name__ == "__main__":
-    user_input = input("Enter your natural language query: ")
+    user_input = input("Enter your question: ")
     sql_query = generate_sql_query(user_input)
 
     if sql_query:
-        print(f"\nGenerated SQL Query:\n{sql_query}")
-
         execution_results = execute_query(sql_query)
         if execution_results:
-            print("\nQuery Results:")
-            for row in execution_results["results"]:
-                print(row)
-            print("\nOptimization Tips:", execution_results["optimization_tips"])
+            user_friendly_response = format_results_as_text(execution_results, user_input)
+            print(f"\n{user_friendly_response}")
         else:
-            print("No results found or error executing query.")
+            print("Sorry, I couldn't find that information in the database. Could you ask your question in a different way?")
     else:
-        print("Failed to generate a valid SQL query.")
+        print("I'm having trouble understanding your question. Could you rephrase it?")
